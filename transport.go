@@ -4,16 +4,31 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func createTransport(transportType, serverURL string) (mcp.Transport, error) {
+func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, error) {
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
+		var httpClient *http.Client
+		if proxyURL != "" {
+			proxyURLParsed, err := url.Parse(proxyURL)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proxy URL: %w", err)
+			}
+			httpClient = &http.Client{
+				Transport: &http.Transport{
+					Proxy: http.ProxyURL(proxyURLParsed),
+				},
+			}
+		} else {
+			httpClient = &http.Client{}
+		}
 		return mcp.NewStreamableClientTransport(serverURL, &mcp.StreamableClientTransportOptions{
-			HTTPClient: &http.Client{},
+			HTTPClient: httpClient,
 		}), nil
 	case "sse":
 		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{}), nil
@@ -27,10 +42,10 @@ func createTransport(transportType, serverURL string) (mcp.Transport, error) {
 
 func createSession(
 	ctx context.Context,
-	transportType, serverURL string,
+	transportType, serverURL, proxyURL string,
 ) (*mcp.ClientSession, error) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "mcpmap", Version: "v1.0.0"}, nil)
-	transport, err := createTransport(transportType, serverURL)
+	transport, err := createTransport(transportType, serverURL, proxyURL)
 	if err != nil {
 		return nil, err
 	}

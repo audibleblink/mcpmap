@@ -28,7 +28,7 @@ func init() {
 func runList(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	session, err := createSession(ctx, transportType, serverURL)
+	session, err := createSession(ctx, transportType, serverURL, proxyURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

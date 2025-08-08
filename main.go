@@ -11,6 +11,7 @@ import (
 var (
 	serverURL     string
 	transportType string
+	proxyURL      string
 )
 
 var rootCmd = &cobra.Command{
@@ -77,6 +78,8 @@ func init() {
 		StringVar(&serverURL, "sse", "", "Use SSE transport with the specified server URL")
 	rootCmd.PersistentFlags().
 		StringVar(&serverURL, "http", "", "Use HTTP transport with the specified server URL")
+	rootCmd.PersistentFlags().
+		StringVar(&proxyURL, "proxy", "", "HTTP proxy URL (e.g., http://proxy.example.com:8080)")
 
 	rootCmd.PersistentPreRunE = validateFlags
 	rootCmd.AddCommand(createCompletionCommand())
