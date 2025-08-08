@@ -13,31 +13,101 @@ import (
 func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, error) {
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
-		var httpClient *http.Client
+		var baseTransport http.RoundTripper = http.DefaultTransport
+		
+		// Configure proxy if provided
 		if proxyURL != "" {
 			proxyURLParsed, err := url.Parse(proxyURL)
 			if err != nil {
 				return nil, fmt.Errorf("invalid proxy URL: %w", err)
 			}
-			httpClient = &http.Client{
-				Transport: &http.Transport{
-					Proxy: http.ProxyURL(proxyURLParsed),
-				},
+			baseTransport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURLParsed),
 			}
-		} else {
-			httpClient = &http.Client{}
 		}
+
+		// Wrap with session-aware round tripper
+		sessionTransport := newSessionAwareRoundTripper(baseTransport)
+		
+		httpClient := &http.Client{
+			Transport: sessionTransport,
+		}
+
 		return mcp.NewStreamableClientTransport(serverURL, &mcp.StreamableClientTransportOptions{
 			HTTPClient: httpClient,
 		}), nil
 	case "sse":
-		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{}), nil
+		var baseTransport http.RoundTripper = http.DefaultTransport
+		
+		// Configure proxy if provided
+		if proxyURL != "" {
+			proxyURLParsed, err := url.Parse(proxyURL)
+			if err != nil {
+				return nil, fmt.Errorf("invalid proxy URL: %w", err)
+			}
+			baseTransport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURLParsed),
+			}
+		}
+
+		// Wrap with session-aware round tripper
+		sessionTransport := newSessionAwareRoundTripper(baseTransport)
+		
+		httpClient := &http.Client{
+			Transport: sessionTransport,
+		}
+
+		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{
+			HTTPClient: httpClient,
+		}), nil
 	default:
 		return nil, fmt.Errorf(
 			"unknown transport type '%s', supported types: sse, streamable-http",
 			transportType,
 		)
 	}
+}
+
+// sessionAwareRoundTripper wraps an http.RoundTripper to handle MCP session IDs
+type sessionAwareRoundTripper struct {
+	transport http.RoundTripper
+	sessionID string
+	firstCall bool
+}
+
+// newSessionAwareRoundTripper creates a new session-aware round tripper
+func newSessionAwareRoundTripper(transport http.RoundTripper) *sessionAwareRoundTripper {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &sessionAwareRoundTripper{
+		transport: transport,
+		firstCall: true,
+	}
+}
+
+// RoundTrip implements http.RoundTripper interface
+func (s *sessionAwareRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Add session ID to request headers if we have one
+	if s.sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", s.sessionID)
+	}
+
+	// Make the request
+	resp, err := s.transport.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	// Check for session ID in response headers (only on first successful response)
+	if s.firstCall {
+		if mcpSessionID := resp.Header.Get("Mcp-Session-Id"); mcpSessionID != "" {
+			s.sessionID = mcpSessionID
+		}
+		s.firstCall = false
+	}
+
+	return resp, nil
 }
 
 func createSession(
