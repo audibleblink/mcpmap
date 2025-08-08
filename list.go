@@ -10,9 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	jsonOutput bool
-)
+var jsonOutput bool
 
 var listCmd = &cobra.Command{
 	Use:   "list [resources|tools|prompts]",
@@ -23,27 +21,20 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
+	rootCmd.AddCommand(listCmd)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output results in raw JSON format")
 }
 
 func runList(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	
-	// Create client and transport
-	client := mcp.NewClient(&mcp.Implementation{Name: "mcpmap", Version: "v1.0.0"}, nil)
-	transport, err := createTransport(transportType, serverURL)
-	if err != nil {
-		return err
-	}
 
-	// Connect to server
-	session, err := client.Connect(ctx, transport)
+	session, err := createSession(ctx, transportType, serverURL)
 	if err != nil {
-		return fmt.Errorf("connect: %w", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
 	}
 	defer session.Close()
 
-	// Determine what to list
 	listType := "all"
 	if len(args) > 0 {
 		listType = args[0]
@@ -51,86 +42,87 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	switch listType {
 	case "tools":
-		return listTools(ctx, session)
+		listTools(ctx, session)
 	case "resources":
-		return listResources(ctx, session)
+		listResources(ctx, session)
 	case "prompts":
-		return listPrompts(ctx, session)
+		listPrompts(ctx, session)
 	case "all":
-		if err := listTools(ctx, session); err != nil {
-			return err
-		}
-		if err := listResources(ctx, session); err != nil {
-			return err
-		}
-		return listPrompts(ctx, session)
+		listTools(ctx, session)
+		listResources(ctx, session)
+		listPrompts(ctx, session)
 	default:
-		return fmt.Errorf("unknown list type '%s', supported types: tools, resources, prompts", listType)
+		return fmt.Errorf(
+			"unknown list type '%s', supported types: tools, resources, prompts",
+			listType,
+		)
+	}
+
+	return nil
+}
+
+func outputItems(items []any, prefix string) {
+	if jsonOutput {
+		for _, item := range items {
+			if js, err := json.Marshal(item); err == nil {
+				fmt.Fprintln(os.Stdout, string(js))
+			}
+		}
+	} else {
+		for _, item := range items {
+			fmt.Printf("%s:%s\n", prefix, getItemName(item))
+		}
 	}
 }
 
-func listTools(ctx context.Context, session *mcp.ClientSession) error {
+func getItemName(item any) string {
+	switch v := item.(type) {
+	case *mcp.Tool:
+		return v.Name
+	case *mcp.Resource:
+		return v.URI
+	case *mcp.Prompt:
+		return v.Name
+	default:
+		return "unknown"
+	}
+}
+
+func listTools(ctx context.Context, session *mcp.ClientSession) {
 	toolsRes, err := session.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {
-		return fmt.Errorf("list tools: %w", err)
+		return
 	}
 
-	if jsonOutput {
-		for _, tool := range toolsRes.Tools {
-			js, err := json.Marshal(tool)
-			if err != nil {
-				return fmt.Errorf("json marshal tool: %w", err)
-			}
-			fmt.Fprintln(os.Stdout, string(js))
-		}
-	} else {
-		for _, tool := range toolsRes.Tools {
-			fmt.Println(tool.Name)
-		}
+	items := make([]any, len(toolsRes.Tools))
+	for i, tool := range toolsRes.Tools {
+		items[i] = tool
 	}
-	return nil
+	outputItems(items, "tool")
 }
 
-func listResources(ctx context.Context, session *mcp.ClientSession) error {
+func listResources(ctx context.Context, session *mcp.ClientSession) {
 	resourcesRes, err := session.ListResources(ctx, &mcp.ListResourcesParams{})
 	if err != nil {
-		return fmt.Errorf("list resources: %w", err)
+		return
 	}
 
-	if jsonOutput {
-		for _, resource := range resourcesRes.Resources {
-			js, err := json.Marshal(resource)
-			if err != nil {
-				return fmt.Errorf("json marshal resource: %w", err)
-			}
-			fmt.Fprintln(os.Stdout, string(js))
-		}
-	} else {
-		for _, resource := range resourcesRes.Resources {
-			fmt.Println(resource.Name)
-		}
+	items := make([]any, len(resourcesRes.Resources))
+	for i, resource := range resourcesRes.Resources {
+		items[i] = resource
 	}
-	return nil
+	outputItems(items, "resource")
 }
 
-func listPrompts(ctx context.Context, session *mcp.ClientSession) error {
+func listPrompts(ctx context.Context, session *mcp.ClientSession) {
 	promptsRes, err := session.ListPrompts(ctx, &mcp.ListPromptsParams{})
 	if err != nil {
-		return fmt.Errorf("list prompts: %w", err)
+		return
 	}
 
-	if jsonOutput {
-		for _, prompt := range promptsRes.Prompts {
-			js, err := json.Marshal(prompt)
-			if err != nil {
-				return fmt.Errorf("json marshal prompt: %w", err)
-			}
-			fmt.Fprintln(os.Stdout, string(js))
-		}
-	} else {
-		for _, prompt := range promptsRes.Prompts {
-			fmt.Println(prompt.Name)
-		}
+	items := make([]any, len(promptsRes.Prompts))
+	for i, prompt := range promptsRes.Prompts {
+		items[i] = prompt
 	}
-	return nil
+	outputItems(items, "prompt")
 }

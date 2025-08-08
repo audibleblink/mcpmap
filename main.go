@@ -20,6 +20,60 @@ var rootCmd = &cobra.Command{
 It supports both SSE (Server-Sent Events) and Streamable HTTP transport options.`,
 }
 
+// validateFlags validates the transport flags and sets global variables
+// validateFlags validates the transport flags and sets global variables
+func validateFlags(cmd *cobra.Command, args []string) error {
+	// Skip validation for completion and debug commands
+	if cmd.Name() == "completion" || cmd.Name() == "__complete" ||
+		cmd.Name() == "__completeNoDesc" {
+		return nil
+	}
+
+	sseFlag := cmd.Flag("sse")
+	httpFlag := cmd.Flag("http")
+
+	if sseFlag.Changed && httpFlag.Changed {
+		return fmt.Errorf("cannot specify both --sse and --http flags")
+	}
+
+	if sseFlag.Changed {
+		transportType = "sse"
+		serverURL = sseFlag.Value.String()
+	} else if httpFlag.Changed {
+		transportType = "http"
+		serverURL = httpFlag.Value.String()
+	}
+
+	if serverURL == "" {
+		return fmt.Errorf("must specify either --sse=<url> or --http=<url>")
+	}
+
+	return nil
+}
+
+// createCompletionCommand creates the completion command
+func createCompletionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                   "completion [bash|zsh|fish|powershell]",
+		Short:                 "Generate completion script",
+		DisableFlagsInUseLine: true,
+		ValidArgs:             []string{"bash", "zsh", "fish", "powershell"},
+		Args:                  cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		Run: func(cmd *cobra.Command, args []string) {
+			switch args[0] {
+			case "bash":
+				cmd.Root().GenBashCompletion(os.Stdout)
+			case "zsh":
+				cmd.Root().GenZshCompletion(os.Stdout)
+			case "fish":
+				cmd.Root().GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				cmd.Root().GenPowerShellCompletionWithDesc(os.Stdout)
+			}
+		},
+	}
+}
+
 func init() {
 	// Set up logging to stderr
 	log.SetOutput(os.Stderr)
@@ -30,33 +84,11 @@ func init() {
 	rootCmd.PersistentFlags().
 		StringVar(&serverURL, "http", "", "Use HTTP transport with the specified server URL")
 
-	// Custom validation for mutually exclusive flags
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		sseFlag := cmd.Flag("sse")
-		httpFlag := cmd.Flag("http")
+	// Set validation function
+	rootCmd.PersistentPreRunE = validateFlags
 
-		if sseFlag.Changed && httpFlag.Changed {
-			return fmt.Errorf("cannot specify both --sse and --http flags")
-		}
-
-		if sseFlag.Changed {
-			transportType = "sse"
-			serverURL = sseFlag.Value.String()
-		} else if httpFlag.Changed {
-			transportType = "http"
-			serverURL = httpFlag.Value.String()
-		}
-
-		if serverURL == "" {
-			return fmt.Errorf("must specify either --sse=<url> or --http=<url>")
-		}
-
-		return nil
-	}
-
-	// Add subcommands
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(execCmd)
+	// Add completion command
+	rootCmd.AddCommand(createCompletionCommand())
 }
 
 func main() {
@@ -64,4 +96,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
