@@ -13,6 +13,7 @@ var (
 	transportType string
 	proxyURL      string
 	authToken     string
+	clientName    string
 )
 
 var rootCmd = &cobra.Command{
@@ -83,6 +84,8 @@ func init() {
 		StringVar(&proxyURL, "proxy", "", "HTTP proxy URL (e.g., http://proxy.example.com:8080)")
 	rootCmd.PersistentFlags().
 		StringVar(&authToken, "token", "", "Bearer token for authentication")
+	rootCmd.PersistentFlags().
+		StringVarP(&clientName, "name", "n", "mcpmap", "Client name to send in MCP initialize request")
 
 	rootCmd.PersistentPreRunE = validateFlags
 	rootCmd.AddCommand(createCompletionCommand())

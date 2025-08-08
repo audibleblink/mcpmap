@@ -10,7 +10,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func createTransport(transportType, serverURL, proxyURL, authToken string) (mcp.Transport, error) {
+func createTransport(
+	transportType, serverURL, proxyURL, authToken, clientName string,
+) (mcp.Transport, error) {
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
 		var httpClient *http.Client
@@ -87,10 +89,10 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func createSession(
 	ctx context.Context,
-	transportType, serverURL, proxyURL, authToken string,
+	transportType, serverURL, proxyURL, authToken, clientName string,
 ) (*mcp.ClientSession, error) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "mcpmap", Version: "v1.0.0"}, nil)
-	transport, err := createTransport(transportType, serverURL, proxyURL, authToken)
+	transport, err := createTransport(transportType, serverURL, proxyURL, authToken, clientName)
 	if err != nil {
 		return nil, err
 	}
