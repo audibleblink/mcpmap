@@ -10,7 +10,7 @@ import (
 
 var (
 	serverURL     string
-	transportType string = "sse" // Default transport type
+	transportType string
 )
 
 var rootCmd = &cobra.Command{
@@ -20,10 +20,7 @@ var rootCmd = &cobra.Command{
 It supports both SSE (Server-Sent Events) and Streamable HTTP transport options.`,
 }
 
-// validateFlags validates the transport flags and sets global variables
-// validateFlags validates the transport flags and sets global variables
 func validateFlags(cmd *cobra.Command, args []string) error {
-	// Skip validation for completion and debug commands
 	if cmd.Name() == "completion" || cmd.Name() == "__complete" ||
 		cmd.Name() == "__completeNoDesc" {
 		return nil
@@ -75,19 +72,13 @@ func createCompletionCommand() *cobra.Command {
 }
 
 func init() {
-	// Set up logging to stderr
 	log.SetOutput(os.Stderr)
-
-	// Global flags for transport configuration
 	rootCmd.PersistentFlags().
 		StringVar(&serverURL, "sse", "", "Use SSE transport with the specified server URL")
 	rootCmd.PersistentFlags().
 		StringVar(&serverURL, "http", "", "Use HTTP transport with the specified server URL")
 
-	// Set validation function
 	rootCmd.PersistentPreRunE = validateFlags
-
-	// Add completion command
 	rootCmd.AddCommand(createCompletionCommand())
 }
 

@@ -100,8 +100,14 @@ func extractParametersFromSchema(schema any) []ParameterInfo {
 		return params
 	}
 
-	schemaMap, ok := schema.(map[string]any)
-	if !ok {
+	// Handle jsonschema.Schema type by converting to JSON and back
+	schemaBytes, err := json.Marshal(schema)
+	if err != nil {
+		return params
+	}
+
+	var schemaMap map[string]any
+	if err := json.Unmarshal(schemaBytes, &schemaMap); err != nil {
 		return params
 	}
 
@@ -126,6 +132,8 @@ func extractParametersFromSchema(schema any) []ParameterInfo {
 
 	return params
 }
+
+
 
 func extractServerConfig(cmd *cobra.Command) (serverURL, transportType string) {
 	if sseFlag := cmd.Flag("sse"); sseFlag != nil && sseFlag.Changed {
