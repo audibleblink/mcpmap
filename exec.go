@@ -35,7 +35,7 @@ func runExec(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	toolName := args[0]
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL)
+	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -160,7 +160,7 @@ func toolNameCompletion(
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL)
+	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -197,7 +197,7 @@ func paramCompletion(
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL)
+	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
