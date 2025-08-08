@@ -27,7 +27,7 @@ func TestCreateTransport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport, err := createTransport(tt.transport, tt.url, "")
+			transport, err := createTransport(tt.transport, tt.url, "", "")
 
 			if tt.wantErr {
 				if err == nil {
@@ -69,7 +69,7 @@ func TestCreateTransportWithProxy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport, err := createTransport(tt.transport, tt.url, tt.proxy)
+			transport, err := createTransport(tt.transport, tt.url, tt.proxy, "")
 
 			if tt.wantErr {
 				if err == nil {
@@ -92,13 +92,61 @@ func TestCreateTransportWithProxy(t *testing.T) {
 
 func TestProxyConfiguration(t *testing.T) {
 	// Test that proxy is properly configured in HTTP client
-	transport, err := createTransport("http", "http://localhost:8080", "http://proxy.example.com:8080")
+	transport, err := createTransport("http", "http://localhost:8080", "http://proxy.example.com:8080", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// This test verifies that the transport was created successfully with proxy
 	// The actual proxy functionality would be tested in integration tests
+	if transport == nil {
+		t.Error("expected non-nil transport")
+	}
+}
+
+func TestAuthenticationConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		transport string
+		url       string
+		token     string
+		wantErr   bool
+	}{
+		{"http with auth token", "http", "http://localhost:8080", "test-token", false},
+		{"sse with auth token", "sse", "http://localhost:3000", "test-token", false},
+		{"http without auth token", "http", "http://localhost:8080", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport, err := createTransport(tt.transport, tt.url, "", tt.token)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				if transport != nil {
+					t.Error("expected nil transport on error")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if transport == nil {
+					t.Error("expected non-nil transport")
+				}
+			}
+		})
+	}
+}
+
+func TestProxyAndAuthenticationTogether(t *testing.T) {
+	// Test that both proxy and authentication can be configured together
+	transport, err := createTransport("http", "http://localhost:8080", "http://proxy.example.com:8080", "test-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
 	if transport == nil {
 		t.Error("expected non-nil transport")
 	}
@@ -121,7 +169,7 @@ func TestCreateSessionFailureScenarios(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
 			defer cancel()
 
-			session, err := createSession(ctx, tt.transport, tt.url, "")
+			session, err := createSession(ctx, tt.transport, tt.url, "", "")
 			if err == nil {
 				t.Error("expected error but got none")
 			}

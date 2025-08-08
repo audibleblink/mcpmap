@@ -12,6 +12,7 @@ var (
 	serverURL     string
 	transportType string
 	proxyURL      string
+	authToken     string
 )
 
 var rootCmd = &cobra.Command{
@@ -80,6 +81,8 @@ func init() {
 		StringVar(&serverURL, "http", "", "Use HTTP transport with the specified server URL")
 	rootCmd.PersistentFlags().
 		StringVar(&proxyURL, "proxy", "", "HTTP proxy URL (e.g., http://proxy.example.com:8080)")
+	rootCmd.PersistentFlags().
+		StringVar(&authToken, "token", "", "Bearer token for authentication")
 
 	rootCmd.PersistentPreRunE = validateFlags
 	rootCmd.AddCommand(createCompletionCommand())

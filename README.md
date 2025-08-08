@@ -6,6 +6,7 @@ A command-line tool for interacting with Model Context Protocol (MCP) servers.
 ## Features
 
 - **Multiple Transport Support**: Connect to MCP servers using SSE (Server-Sent Events) or HTTP transport
+- **Authentication Support**: Bearer token authentication for secure MCP servers
 - **Proxy Support**: Route HTTP requests through an HTTP proxy server
 - **Tool Execution**: Execute tools on MCP servers with parameters
 - **Resource Listing**: List available resources, tools, and prompts
@@ -34,4 +35,7 @@ mcpmap --sse=http://localhost:3000 exec write_file --param path=/tmp/output.txt 
 
 # Use HTTP transport with a proxy server
 mcpmap --http=http://localhost:8080 --proxy=http://proxy.example.com:8080 list tools
+
+# Connect to an authenticated MCP server
+mcpmap --sse=https://mcp.sentry.dev/sse --token=your-bearer-token list tools
 ```

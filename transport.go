@@ -10,19 +10,27 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, error) {
+func createTransport(transportType, serverURL, proxyURL, authToken string) (mcp.Transport, error) {
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
 		var httpClient *http.Client
-		if proxyURL != "" {
-			proxyURLParsed, err := url.Parse(proxyURL)
-			if err != nil {
-				return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		if proxyURL != "" || authToken != "" {
+			transport := &http.Transport{}
+			if proxyURL != "" {
+				proxyURLParsed, err := url.Parse(proxyURL)
+				if err != nil {
+					return nil, fmt.Errorf("invalid proxy URL: %w", err)
+				}
+				transport.Proxy = http.ProxyURL(proxyURLParsed)
 			}
-			httpClient = &http.Client{
-				Transport: &http.Transport{
-					Proxy: http.ProxyURL(proxyURLParsed),
-				},
+			httpClient = &http.Client{Transport: transport}
+
+			// Add authentication if token is provided
+			if authToken != "" {
+				httpClient.Transport = &authTransport{
+					base:  transport,
+					token: authToken,
+				}
 			}
 		} else {
 			httpClient = &http.Client{}
@@ -31,7 +39,31 @@ func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, 
 			HTTPClient: httpClient,
 		}), nil
 	case "sse":
-		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{}), nil
+		var httpClient *http.Client
+		if proxyURL != "" || authToken != "" {
+			transport := &http.Transport{}
+			if proxyURL != "" {
+				proxyURLParsed, err := url.Parse(proxyURL)
+				if err != nil {
+					return nil, fmt.Errorf("invalid proxy URL: %w", err)
+				}
+				transport.Proxy = http.ProxyURL(proxyURLParsed)
+			}
+			httpClient = &http.Client{Transport: transport}
+
+			// Add authentication if token is provided
+			if authToken != "" {
+				httpClient.Transport = &authTransport{
+					base:  transport,
+					token: authToken,
+				}
+			}
+		} else {
+			httpClient = &http.Client{}
+		}
+		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{
+			HTTPClient: httpClient,
+		}), nil
 	default:
 		return nil, fmt.Errorf(
 			"unknown transport type '%s', supported types: sse, streamable-http",
@@ -40,12 +72,25 @@ func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, 
 	}
 }
 
+// authTransport wraps an http.RoundTripper to add authentication headers
+type authTransport struct {
+	base  http.RoundTripper
+	token string
+}
+
+func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Clone the request to avoid modifying the original
+	reqClone := req.Clone(req.Context())
+	reqClone.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(reqClone)
+}
+
 func createSession(
 	ctx context.Context,
-	transportType, serverURL, proxyURL string,
+	transportType, serverURL, proxyURL, authToken string,
 ) (*mcp.ClientSession, error) {
 	client := mcp.NewClient(&mcp.Implementation{Name: "mcpmap", Version: "v1.0.0"}, nil)
-	transport, err := createTransport(transportType, serverURL, proxyURL)
+	transport, err := createTransport(transportType, serverURL, proxyURL, authToken)
 	if err != nil {
 		return nil, err
 	}
