@@ -10,53 +10,41 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// createHTTPClient creates an HTTP client with proxy configuration and session-aware transport
+func createHTTPClient(proxyURL string) (*http.Client, error) {
+	var baseTransport http.RoundTripper = http.DefaultTransport
+
+	// Configure proxy if provided
+	if proxyURL != "" {
+		proxyURLParsed, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		baseTransport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURLParsed),
+		}
+	}
+
+	// Wrap with session-aware round tripper
+	sessionTransport := newSessionAwareRoundTripper(baseTransport)
+
+	return &http.Client{
+		Transport: sessionTransport,
+	}, nil
+}
+
 func createTransport(transportType, serverURL, proxyURL string) (mcp.Transport, error) {
+	httpClient, err := createHTTPClient(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
-		var baseTransport http.RoundTripper = http.DefaultTransport
-		
-		// Configure proxy if provided
-		if proxyURL != "" {
-			proxyURLParsed, err := url.Parse(proxyURL)
-			if err != nil {
-				return nil, fmt.Errorf("invalid proxy URL: %w", err)
-			}
-			baseTransport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURLParsed),
-			}
-		}
-
-		// Wrap with session-aware round tripper
-		sessionTransport := newSessionAwareRoundTripper(baseTransport)
-		
-		httpClient := &http.Client{
-			Transport: sessionTransport,
-		}
-
 		return mcp.NewStreamableClientTransport(serverURL, &mcp.StreamableClientTransportOptions{
 			HTTPClient: httpClient,
 		}), nil
 	case "sse":
-		var baseTransport http.RoundTripper = http.DefaultTransport
-		
-		// Configure proxy if provided
-		if proxyURL != "" {
-			proxyURLParsed, err := url.Parse(proxyURL)
-			if err != nil {
-				return nil, fmt.Errorf("invalid proxy URL: %w", err)
-			}
-			baseTransport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURLParsed),
-			}
-		}
-
-		// Wrap with session-aware round tripper
-		sessionTransport := newSessionAwareRoundTripper(baseTransport)
-		
-		httpClient := &http.Client{
-			Transport: sessionTransport,
-		}
-
 		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{
 			HTTPClient: httpClient,
 		}), nil
