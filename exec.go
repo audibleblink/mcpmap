@@ -16,10 +16,29 @@ var params []string
 
 var execCmd = &cobra.Command{
 	Use:   "exec <tool>",
-	Short: "Execute a tool on the MCP server",
-	Long:  `Execute a tool on the MCP server with the specified parameters.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runExec,
+	Short: "Execute a tool on the MCP server with automatic type conversion",
+	Long: `Execute a tool on the MCP server with automatic type conversion.
+
+Parameters are automatically converted to their expected types based on the tool's schema.
+If schema fetching fails, parameters are treated as strings (backward compatibility).
+
+Examples:
+  # Simple types
+  mcpmap exec search --param query="user login" --param limit=10
+  
+  # Boolean values (accepts: true/false, yes/no, 1/0, on/off)
+  mcpmap exec toggle --param enabled=true --param verbose=yes
+  
+  # Arrays (comma-separated or JSON)
+  mcpmap exec filter --param tags=red,blue --param ids=[1,2,3]
+  
+  # Complex objects (JSON required)
+  mcpmap exec query --param filter='{"age":{"min":18}}'
+  
+  # Numbers (integers and floats)
+  mcpmap exec calculate --param x=10 --param y=3.14`,
+	Args: cobra.ExactArgs(1),
+	RunE: runExec,
 }
 
 func init() {
@@ -35,34 +54,42 @@ func runExec(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	toolName := args[0]
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	defer session.Close()
+	return withSession(ctx, func(session *mcp.ClientSession) error {
+		// Try to fetch schema (best-effort)
+		var toolParams map[string]any
+		schema, err := getToolSchema(ctx, session, toolName)
+		if err != nil {
+			// Schema fetch failed, warn and fall back to string parsing
+			fmt.Fprintf(os.Stderr, "Warning: Could not fetch schema for tool %q: %v\n", toolName, err)
+			fmt.Fprintf(os.Stderr, "Warning: Using string-only parameter parsing\n")
 
-	toolParams, err := parseParams(params)
-	if err != nil {
-		return fmt.Errorf("parse parameters: %w", err)
-	}
+			toolParams, err = parseParams(params)
+			if err != nil {
+				return fmt.Errorf("parse parameters: %w", err)
+			}
+		} else {
+			// Schema available, use schema-based parsing
+			toolParams, err = parseParamsWithSchema(params, schema)
+			if err != nil {
+				return fmt.Errorf("parse parameters with schema: %w", err)
+			}
+		}
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: toolParams,
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      toolName,
+			Arguments: toolParams,
+		})
+		if err != nil {
+			return err
+		}
+
+		js, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("json marshal result: %w", err)
+		}
+		fmt.Fprintln(os.Stdout, string(js))
+		return nil
 	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	js, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("json marshal result: %w", err)
-	}
-	fmt.Fprintln(os.Stdout, string(js))
-
-	return nil
 }
 
 func parseParams(params []string) (map[string]any, error) {
@@ -141,6 +168,17 @@ func extractServerConfig(cmd *cobra.Command) (serverURL, transportType string) {
 		return httpFlag.Value.String(), "http"
 	}
 	return "", ""
+}
+
+// withSession creates a session, invokes fn, and ensures the session is closed.
+// It returns any error produced during session creation or execution.
+func withSession(ctx context.Context, fn func(*mcp.ClientSession) error) error {
+	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	return fn(session)
 }
 
 func toolNameCompletion(

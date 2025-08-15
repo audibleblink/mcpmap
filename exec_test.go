@@ -123,7 +123,7 @@ func TestExecCommandConfiguration(t *testing.T) {
 		t.Errorf("unexpected exec command Use: %q", execCmd.Use)
 	}
 
-	if execCmd.Short != "Execute a tool on the MCP server" {
+	if execCmd.Short != "Execute a tool on the MCP server with automatic type conversion" {
 		t.Errorf("unexpected exec command Short: %q", execCmd.Short)
 	}
 

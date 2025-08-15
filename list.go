@@ -88,6 +88,23 @@ func getItemName(item any) string {
 	}
 }
 
+// listItems is a generic function to handle the common pattern of list operations
+func listItems[T any](ctx context.Context, session *mcp.ClientSession, 
+	fetchFunc func(context.Context, *mcp.ClientSession) ([]T, error), 
+	itemType string) {
+	
+	items, err := fetchFunc(ctx, session)
+	if err != nil {
+		return
+	}
+
+	anyItems := make([]any, len(items))
+	for i, item := range items {
+		anyItems[i] = item
+	}
+	outputItems(anyItems, itemType)
+}
+
 func listTools(ctx context.Context, session *mcp.ClientSession) {
 	toolsRes, err := session.ListTools(ctx, &mcp.ListToolsParams{})
 	if err != nil {

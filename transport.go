@@ -6,63 +6,54 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// createHTTPClient creates an HTTP client with optional proxy and authentication
+func createHTTPClient(proxyURL, authToken string) (*http.Client, error) {
+	if proxyURL == "" && authToken == "" {
+		return &http.Client{}, nil
+	}
+
+	transport := &http.Transport{}
+
+	if proxyURL != "" {
+		proxyURLParsed, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL: %w", err)
+		}
+		transport.Proxy = http.ProxyURL(proxyURLParsed)
+	}
+
+	httpClient := &http.Client{Transport: transport}
+
+	// Add authentication if token is provided
+	if authToken != "" {
+		httpClient.Transport = &authTransport{
+			base:  transport,
+			token: authToken,
+		}
+	}
+
+	return httpClient, nil
+}
+
 func createTransport(
 	transportType, serverURL, proxyURL, authToken, clientName string,
 ) (mcp.Transport, error) {
+	httpClient, err := createHTTPClient(proxyURL, authToken)
+	if err != nil {
+		return nil, err
+	}
+
 	switch strings.ToLower(transportType) {
 	case "streamable", "streamable-http", "http":
-		var httpClient *http.Client
-		if proxyURL != "" || authToken != "" {
-			transport := &http.Transport{}
-			if proxyURL != "" {
-				proxyURLParsed, err := url.Parse(proxyURL)
-				if err != nil {
-					return nil, fmt.Errorf("invalid proxy URL: %w", err)
-				}
-				transport.Proxy = http.ProxyURL(proxyURLParsed)
-			}
-			httpClient = &http.Client{Transport: transport}
-
-			// Add authentication if token is provided
-			if authToken != "" {
-				httpClient.Transport = &authTransport{
-					base:  transport,
-					token: authToken,
-				}
-			}
-		} else {
-			httpClient = &http.Client{}
-		}
 		return mcp.NewStreamableClientTransport(serverURL, &mcp.StreamableClientTransportOptions{
 			HTTPClient: httpClient,
 		}), nil
 	case "sse":
-		var httpClient *http.Client
-		if proxyURL != "" || authToken != "" {
-			transport := &http.Transport{}
-			if proxyURL != "" {
-				proxyURLParsed, err := url.Parse(proxyURL)
-				if err != nil {
-					return nil, fmt.Errorf("invalid proxy URL: %w", err)
-				}
-				transport.Proxy = http.ProxyURL(proxyURLParsed)
-			}
-			httpClient = &http.Client{Transport: transport}
-
-			// Add authentication if token is provided
-			if authToken != "" {
-				httpClient.Transport = &authTransport{
-					base:  transport,
-					token: authToken,
-				}
-			}
-		} else {
-			httpClient = &http.Client{}
-		}
 		return mcp.NewSSEClientTransport(serverURL, &mcp.SSEClientTransportOptions{
 			HTTPClient: httpClient,
 		}), nil
@@ -127,6 +118,42 @@ func getToolParameters(
 	for _, tool := range tools {
 		if tool.Name == toolName {
 			return extractParametersFromSchema(tool.InputSchema), nil
+		}
+	}
+
+	return nil, fmt.Errorf("tool %q not found", toolName)
+}
+
+// getToolSchema fetches the schema for a specific tool with timeout
+func getToolSchema(ctx context.Context, session *mcp.ClientSession, toolName string) (*ToolSchema, error) {
+	// Create a context with timeout for schema fetching
+	schemaCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	// Get all tools to find the specific tool
+	toolsRes, err := session.ListTools(schemaCtx, &mcp.ListToolsParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tools: %w", err)
+	}
+
+	// Find the specific tool
+	for _, tool := range toolsRes.Tools {
+		if tool.Name == toolName {
+			if tool.InputSchema == nil {
+				// Tool has no schema, return empty schema
+				return &ToolSchema{
+					Parameters: make(map[string]*ParameterSchema),
+					Required:   []string{},
+				}, nil
+			}
+
+			// Extract schema from the tool
+			schema, err := extractFullSchema(tool.InputSchema)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract schema for tool %q: %w", toolName, err)
+			}
+
+			return schema, nil
 		}
 	}
 
