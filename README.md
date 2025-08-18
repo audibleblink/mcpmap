@@ -13,6 +13,40 @@ A command-line tool for interacting with Model Context Protocol (MCP) servers.
 - **Resource Listing**: List available resources, tools, and prompts
 - **Tab Completion**: Smart tab completion for tool names and parameters
 - **Graceful Fallback**: Falls back to string parameters when schema is unavailable
+- **File-based Caching**: Caches server metadata for faster tab completion and offline access
+
+## Caching
+
+mcpmap includes a file-based cache system that significantly improves performance, especially for tab completion operations.
+
+### Cache Behavior
+
+- **Automatic Caching**: Server metadata (tools, resources, prompts) is automatically cached after first access
+- **Fast Tab Completion**: Tab completion uses cached data when available, falling back to server queries
+- **Platform-specific Locations**: Cache files are stored in OS-appropriate directories:
+  - **Linux/macOS**: `$XDG_CACHE_HOME/mcpmap` or `~/.cache/mcpmap`
+  - **Windows**: `%LOCALAPPDATA%\mcpmap\cache`
+- **Secure Storage**: Cache files have restricted permissions (0600) and directories (0700)
+- **Atomic Writes**: Cache updates use atomic file operations to prevent corruption
+- **Version Management**: Cache format includes versioning for future compatibility
+
+### Cache Management
+
+View cache information:
+```bash
+mcpmap cache info
+```
+
+Clear all cached data:
+```bash
+mcpmap cache clear
+```
+
+### Performance Benefits
+
+- Tab completion: <100ms with warm cache (vs 1-3s cold)
+- Cache parse time: <10ms for typical server metadata
+- Offline fallback: List commands work with cached data when server unavailable
 
 ## Installation
 

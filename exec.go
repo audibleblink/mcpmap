@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"mcpmap/cache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
@@ -195,6 +196,17 @@ func toolNameCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	// Try cache first
+	c := cache.New(serverURL, transportType, authToken, clientName)
+	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
+		completions := make([]string, 0, len(data.Tools))
+		for _, tool := range data.Tools {
+			completions = append(completions, tool.Name)
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Cache miss - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -208,6 +220,12 @@ func toolNameCompletion(
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+
+	// Update cache for next time
+	go func() {
+		cacheData := &cache.CacheData{Tools: tools}
+		c.Save(cacheData)
+	}()
 
 	completions := make([]string, 0, len(tools))
 	for _, tool := range tools {
@@ -232,6 +250,28 @@ func paramCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	toolName := args[0]
+
+	// Try cache first
+	c := cache.New(serverURL, transportType, authToken, clientName)
+	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
+		// Find the tool in cached data
+		for _, tool := range data.Tools {
+			if tool.Name == toolName {
+				params := extractParametersFromSchema(tool.InputSchema)
+				if len(params) > 0 {
+					completions := make([]string, 0, len(params))
+					for _, param := range params {
+						completions = append(completions, param.Name+"=")
+					}
+					return completions, cobra.ShellCompDirectiveNoFileComp
+				}
+				break
+			}
+		}
+	}
+
+	// Cache miss or tool not found - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -241,11 +281,18 @@ func paramCompletion(
 	}
 	defer session.Close()
 
-	toolName := args[0]
 	params, err := getToolParameters(ctx, session, toolName)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+
+	// Update cache for next time (get all tools to cache them)
+	go func() {
+		if tools, err := getTools(ctx, session); err == nil {
+			cacheData := &cache.CacheData{Tools: tools}
+			c.Save(cacheData)
+		}
+	}()
 
 	completions := make([]string, 0, len(params))
 	for _, param := range params {

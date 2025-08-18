@@ -48,7 +48,8 @@ type transportConfig struct {
 
 func parseTransportFlags(cmd *cobra.Command) (*transportConfig, error) {
 	if cmd.Name() == "completion" || cmd.Name() == "__complete" ||
-		cmd.Name() == "__completeNoDesc" {
+		cmd.Name() == "__completeNoDesc" || cmd.Name() == "cache" ||
+		cmd.Name() == "clear" || cmd.Name() == "info" {
 		return nil, nil // Skip validation for completion commands
 	}
 
