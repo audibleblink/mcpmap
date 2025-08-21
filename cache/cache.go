@@ -37,8 +37,8 @@ CacheData struct {
 
 // cacheFile represents the structure of the cache file on disk
 type cacheFile struct {
-	Version   int       `json:"version"`
-	Timestamp time.Time `json:"timestamp"`
+	Version    int       `json:"version"`
+	Timestamp  time.Time `json:"timestamp"`
 	ServerInfo struct {
 		Name    string `json:"name"`
 		Version string `json:"version"`
@@ -171,12 +171,12 @@ func readCacheCounts(filePath string) (tools, resources, prompts int) {
 	if err != nil {
 		return 0, 0, 0
 	}
-	
+
 	var cf cacheFile
 	if err := json.Unmarshal(data, &cf); err != nil || cf.Data == nil {
 		return 0, 0, 0
 	}
-	
+
 	return len(cf.Data.Tools), len(cf.Data.Resources), len(cf.Data.Prompts)
 }
 
@@ -185,18 +185,18 @@ func readCacheCounts(filePath string) (tools, resources, prompts int) {
 // It ignores missing directories and returns an error if any file removal fails.
 func ClearAll() error {
 	cacheDir := getCacheDir()
-	
+
 	// Check if cache directory exists
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		return nil // Nothing to clear
 	}
-	
+
 	// Read directory contents
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return fmt.Errorf("read cache directory: %w", err)
 	}
-	
+
 	// Remove all .json files (cache files)
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".json" {
@@ -206,28 +206,28 @@ func ClearAll() error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
 // CacheInfo represents information about the cache
 type // CacheInfo summarizes the contents of the cache directory including total counts and per-file metadata.
 CacheInfo struct {
-	CacheDir   string      `json:"cache_dir"`
-	TotalFiles int         `json:"total_files"`
-	TotalSize  int64       `json:"total_size_bytes"`
-	Files      []FileInfo  `json:"files"`
+	CacheDir   string     `json:"cache_dir"`
+	TotalFiles int        `json:"total_files"`
+	TotalSize  int64      `json:"total_size_bytes"`
+	Files      []FileInfo `json:"files"`
 }
 
 // FileInfo represents information about a single cache file
 type // FileInfo describes a single cache file's size, modification time, and contained item counts.
 FileInfo struct {
-	Name         string    `json:"name"`
-	Size         int64     `json:"size_bytes"`
-	ModTime      time.Time `json:"modified_time"`
-	ToolsCount   int       `json:"tools_count"`
-	ResourcesCount int     `json:"resources_count"`
-	PromptsCount int       `json:"prompts_count"`
+	Name           string    `json:"name"`
+	Size           int64     `json:"size_bytes"`
+	ModTime        time.Time `json:"modified_time"`
+	ToolsCount     int       `json:"tools_count"`
+	ResourcesCount int       `json:"resources_count"`
+	PromptsCount   int       `json:"prompts_count"`
 }
 
 // GetCacheInfo returns information about all cache files
@@ -235,38 +235,38 @@ FileInfo struct {
 // Files that cannot be read or parsed are skipped silently.
 func GetCacheInfo() (*CacheInfo, error) {
 	cacheDir := getCacheDir()
-	
+
 	info := &CacheInfo{
 		CacheDir: cacheDir,
 		Files:    []FileInfo{},
 	}
-	
+
 	// Check if cache directory exists
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		return info, nil // Empty cache info
 	}
-	
+
 	// Read directory contents
 	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return nil, fmt.Errorf("read cache directory: %w", err)
 	}
-	
+
 	// Process each cache file
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
-		
+
 		filePath := filepath.Join(cacheDir, entry.Name())
 		fileInfo, err := os.Stat(filePath)
 		if err != nil {
 			continue // Skip files we can't stat
 		}
-		
+
 		// Get item counts using helper
 		toolsCount, resourcesCount, promptsCount := readCacheCounts(filePath)
-		
+
 		cacheFileInfo := FileInfo{
 			Name:           entry.Name(),
 			Size:           fileInfo.Size(),
@@ -275,11 +275,11 @@ func GetCacheInfo() (*CacheInfo, error) {
 			ResourcesCount: resourcesCount,
 			PromptsCount:   promptsCount,
 		}
-		
+
 		info.Files = append(info.Files, cacheFileInfo)
 		info.TotalFiles++
 		info.TotalSize += fileInfo.Size()
 	}
-	
+
 	return info, nil
 }

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"mcpmap/cache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"mcpmap/cache"
 )
 
 var jsonOutput bool
@@ -54,104 +54,67 @@ func fetchAllServerData(ctx context.Context, session *mcp.ClientSession) (*cache
 	}, nil
 }
 
-// displayCachedData displays cached data when server is unavailable
-func displayCachedData(data *cache.CacheData, args []string) error {
-	listType := "all"
-	if len(args) > 0 {
-		listType = args[0]
+// loadServerData loads data from cache first, then tries server, with fallback to cache
+func loadServerData(ctx context.Context) (*cache.CacheData, error) {
+	return loadServerDataWithConfig(ctx, serverURL, transportType, authToken, clientName)
+}
+
+// loadServerDataWithConfig loads data with specific server configuration
+func loadServerDataWithConfig(ctx context.Context, srvURL, transport, token, client string) (*cache.CacheData, error) {
+	c := cache.New(srvURL, transport, token, client)
+
+	var cachedData *cache.CacheData
+	if data, _, _ := c.Load(); data != nil {
+		cachedData = data
+	}
+	session, err := createSession(ctx, transport, srvURL, proxyURL, token, client)
+	if err != nil {
+		if cachedData != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Using cached data (server unavailable)\n")
+			return cachedData, nil
+		}
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	defer session.Close()
+
+	freshData, err := fetchAllServerData(ctx, session)
+	if err == nil && freshData != nil {
+		_ = c.Save(freshData)
+		return freshData, nil
 	}
 
+	if cachedData != nil {
+		return cachedData, nil
+	}
+
+	return nil, fmt.Errorf("no data available")
+}
+
+// displayData outputs the specified data type from cache data
+func displayData(data *cache.CacheData, listType string) error {
 	switch listType {
 	case "tools":
-		if data.Tools != nil {
-			items := make([]any, len(data.Tools))
-			for i, tool := range data.Tools {
-				items[i] = tool
-			}
-			outputItems(items, "tool")
-		}
+		outputSlice(data.Tools, "tool")
 	case "resources":
-		if data.Resources != nil {
-			items := make([]any, len(data.Resources))
-			for i, resource := range data.Resources {
-				items[i] = resource
-			}
-			outputItems(items, "resource")
-		}
+		outputSlice(data.Resources, "resource")
 	case "prompts":
-		if data.Prompts != nil {
-			items := make([]any, len(data.Prompts))
-			for i, prompt := range data.Prompts {
-				items[i] = prompt
-			}
-			outputItems(items, "prompt")
-		}
+		outputSlice(data.Prompts, "prompt")
 	case "all":
-		if data.Tools != nil {
-			items := make([]any, len(data.Tools))
-			for i, tool := range data.Tools {
-				items[i] = tool
-			}
-			outputItems(items, "tool")
-		}
-		if data.Resources != nil {
-			items := make([]any, len(data.Resources))
-			for i, resource := range data.Resources {
-				items[i] = resource
-			}
-			outputItems(items, "resource")
-		}
-		if data.Prompts != nil {
-			items := make([]any, len(data.Prompts))
-			for i, prompt := range data.Prompts {
-				items[i] = prompt
-			}
-			outputItems(items, "prompt")
-		}
+		outputSlice(data.Tools, "tool")
+		outputSlice(data.Resources, "resource")
+		outputSlice(data.Prompts, "prompt")
 	default:
-		return fmt.Errorf(
-			"unknown list type '%s', supported types: tools, resources, prompts",
-			listType,
-		)
+		return fmt.Errorf("unknown list type '%s', supported types: tools, resources, prompts", listType)
 	}
-
 	return nil
 }
 
 func runList(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Initialize cache
-	c := cache.New(serverURL, transportType, authToken, clientName)
-
-	// Try cache first for faster response (will still fetch fresh data)
-	var cachedData *cache.CacheData
-	if data, _, _ := c.Load(); data != nil {
-		cachedData = data
-	}
-
-	// Query server for fresh data synchronously
-	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
+	data, err := loadServerData(ctx)
 	if err != nil {
-		// If cache exists, use it as fallback
-		if cachedData != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Using cached data (server unavailable)\n")
-			return displayCachedData(cachedData, args)
-		}
-		return fmt.Errorf("create session: %w", err)
-	}
-	defer session.Close()
-
-	freshData, err := fetchAllServerData(ctx, session)
-	if err == nil && freshData != nil {
-		// Save synchronously so cache file is guaranteed written before exit
-		_ = c.Save(freshData)
-		cachedData = freshData
-	}
-
-	// Display data (fresh if successful, else cached)
-	if cachedData == nil {
-		return fmt.Errorf("no data available")
+		return err
 	}
 
 	listType := "all"
@@ -159,34 +122,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		listType = args[0]
 	}
 
-	switch listType {
-	case "tools":
-		items := make([]any, len(cachedData.Tools))
-		for i, tool := range cachedData.Tools { items[i] = tool }
-		outputItems(items, "tool")
-	case "resources":
-		items := make([]any, len(cachedData.Resources))
-		for i, r := range cachedData.Resources { items[i] = r }
-		outputItems(items, "resource")
-	case "prompts":
-		items := make([]any, len(cachedData.Prompts))
-		for i, p := range cachedData.Prompts { items[i] = p }
-		outputItems(items, "prompt")
-	case "all":
-		items := make([]any, len(cachedData.Tools))
-		for i, tool := range cachedData.Tools { items[i] = tool }
-		outputItems(items, "tool")
-		items = make([]any, len(cachedData.Resources))
-		for i, r := range cachedData.Resources { items[i] = r }
-		outputItems(items, "resource")
-		items = make([]any, len(cachedData.Prompts))
-		for i, p := range cachedData.Prompts { items[i] = p }
-		outputItems(items, "prompt")
-	default:
-		return fmt.Errorf("unknown list type '%s', supported types: tools, resources, prompts", listType)
-	}
-
-	return nil
+	return displayData(data, listType)
 }
 
 func outputItems(items []any, prefix string) {
@@ -216,58 +152,11 @@ func getItemName(item any) string {
 	}
 }
 
-// listItems is a generic function to handle the common pattern of list operations
-func listItems[T any](ctx context.Context, session *mcp.ClientSession, 
-	fetchFunc func(context.Context, *mcp.ClientSession) ([]T, error), 
-	itemType string) {
-	
-	items, err := fetchFunc(ctx, session)
-	if err != nil {
-		return
-	}
-
-	anyItems := make([]any, len(items))
+// outputSlice converts a typed slice to []any and outputs it
+func outputSlice[T any](items []T, itemType string) {
+	converted := make([]any, len(items))
 	for i, item := range items {
-		anyItems[i] = item
+		converted[i] = item
 	}
-	outputItems(anyItems, itemType)
-}
-
-func listTools(ctx context.Context, session *mcp.ClientSession) {
-	toolsRes, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil {
-		return
-	}
-
-	items := make([]any, len(toolsRes.Tools))
-	for i, tool := range toolsRes.Tools {
-		items[i] = tool
-	}
-	outputItems(items, "tool")
-}
-
-func listResources(ctx context.Context, session *mcp.ClientSession) {
-	resourcesRes, err := session.ListResources(ctx, &mcp.ListResourcesParams{})
-	if err != nil {
-		return
-	}
-
-	items := make([]any, len(resourcesRes.Resources))
-	for i, resource := range resourcesRes.Resources {
-		items[i] = resource
-	}
-	outputItems(items, "resource")
-}
-
-func listPrompts(ctx context.Context, session *mcp.ClientSession) {
-	promptsRes, err := session.ListPrompts(ctx, &mcp.ListPromptsParams{})
-	if err != nil {
-		return
-	}
-
-	items := make([]any, len(promptsRes.Prompts))
-	for i, prompt := range promptsRes.Prompts {
-		items[i] = prompt
-	}
-	outputItems(items, "prompt")
+	outputItems(converted, itemType)
 }

@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonschema"
 )
@@ -16,8 +17,8 @@ type ParameterSchema struct {
 	Default     any                         `json:"default,omitempty"`
 	Enum        []any                       `json:"enum,omitempty"`
 	Format      string                      `json:"format,omitempty"`
-	Items       *ParameterSchema            `json:"items,omitempty"`       // For arrays
-	Properties  map[string]*ParameterSchema `json:"properties,omitempty"`  // For objects
+	Items       *ParameterSchema            `json:"items,omitempty"`      // For arrays
+	Properties  map[string]*ParameterSchema `json:"properties,omitempty"` // For objects
 	Description string                      `json:"description,omitempty"`
 }
 
@@ -36,14 +37,12 @@ func extractFullSchema(schema any) (*ToolSchema, error) {
 		}, nil
 	}
 
-	// Handle *jsonschema.Schema from MCP SDK
 	if jsonSchema, ok := schema.(*jsonschema.Schema); ok {
 		toolSchema := &ToolSchema{
 			Parameters: make(map[string]*ParameterSchema),
 			Required:   jsonSchema.Required,
 		}
 
-		// Extract properties (parameters)
 		for name, propSchema := range jsonSchema.Properties {
 			paramSchema := extractParameterSchemaFromJSON(name, propSchema, jsonSchema.Required)
 			toolSchema.Parameters[name] = paramSchema
@@ -52,7 +51,6 @@ func extractFullSchema(schema any) (*ToolSchema, error) {
 		return toolSchema, nil
 	}
 
-	// Handle map[string]any (legacy/fallback)
 	schemaMap, ok := schema.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("schema is not a valid object")
@@ -63,7 +61,6 @@ func extractFullSchema(schema any) (*ToolSchema, error) {
 		Required:   []string{},
 	}
 
-	// Extract required fields
 	if requiredField, exists := schemaMap["required"]; exists {
 		if requiredSlice, ok := requiredField.([]any); ok {
 			for _, req := range requiredSlice {
@@ -74,7 +71,6 @@ func extractFullSchema(schema any) (*ToolSchema, error) {
 		}
 	}
 
-	// Extract properties (parameters)
 	if propertiesField, exists := schemaMap["properties"]; exists {
 		if propertiesMap, ok := propertiesField.(map[string]any); ok {
 			for name, propSchema := range propertiesMap {
@@ -85,20 +81,6 @@ func extractFullSchema(schema any) (*ToolSchema, error) {
 	}
 
 	return toolSchema, nil
-}
-
-// extractParameterSchema extracts schema for a single parameter
-// extractParameterData creates a ParameterSchema from normalized data
-func extractParameterData(name, typeStr, description, format string, defaultVal any, enum []any, required []string) *ParameterSchema {
-	return &ParameterSchema{
-		Name:        name,
-		Type:        typeStr,
-		Required:    contains(required, name),
-		Description: description,
-		Default:     defaultVal,
-		Enum:        enum,
-		Format:      format,
-	}
 }
 
 type schemaData struct {
@@ -133,7 +115,11 @@ func extractComplexTypes(param *ParameterSchema, schemaMap map[string]any) {
 			if propertiesMap, ok := propertiesField.(map[string]any); ok {
 				param.Properties = make(map[string]*ParameterSchema)
 				for propName, propSchema := range propertiesMap {
-					param.Properties[propName] = extractParameterSchema(propName, propSchema, []string{})
+					param.Properties[propName] = extractParameterSchema(
+						propName,
+						propSchema,
+						[]string{},
+					)
 				}
 			}
 		}
@@ -148,7 +134,11 @@ func extractComplexTypesFromJSON(param *ParameterSchema, schema *jsonschema.Sche
 	if param.Type == "object" && len(schema.Properties) > 0 {
 		param.Properties = make(map[string]*ParameterSchema)
 		for propName, propSchema := range schema.Properties {
-			param.Properties[propName] = extractParameterSchemaFromJSON(propName, propSchema, []string{})
+			param.Properties[propName] = extractParameterSchemaFromJSON(
+				propName,
+				propSchema,
+				[]string{},
+			)
 		}
 	}
 }
@@ -159,9 +149,8 @@ func extractParameterSchema(name string, schema any, required []string) *Paramet
 		return buildParameterSchema(name, schemaData{Type: "string"}, required)
 	}
 
-	// Extract fields from map
 	data := schemaData{
-		Type: "string", // default
+		Type: "string",
 	}
 
 	if typeField, exists := schemaMap["type"]; exists {
@@ -199,12 +188,15 @@ func extractParameterSchema(name string, schema any, required []string) *Paramet
 }
 
 // extractParameterSchemaFromJSON extracts schema from *jsonschema.Schema
-func extractParameterSchemaFromJSON(name string, schema *jsonschema.Schema, required []string) *ParameterSchema {
+func extractParameterSchemaFromJSON(
+	name string,
+	schema *jsonschema.Schema,
+	required []string,
+) *ParameterSchema {
 	if schema == nil {
 		return buildParameterSchema(name, schemaData{Type: "string"}, required)
 	}
 
-	// Extract default value
 	var defaultVal any
 	if len(schema.Default) > 0 {
 		json.Unmarshal(schema.Default, &defaultVal)
@@ -226,54 +218,22 @@ func extractParameterSchemaFromJSON(name string, schema *jsonschema.Schema, requ
 
 // contains checks if a string slice contains a specific string
 func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slice, item)
 }
 
 // validateRequired checks if all required parameters are present
 func validateRequired(params map[string]any, schema *ToolSchema) error {
 	var missing []string
-	
+
 	for _, required := range schema.Required {
 		if _, exists := params[required]; !exists {
 			missing = append(missing, required)
 		}
 	}
-	
+
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required parameters: %v", missing)
 	}
-	
-	return nil
-}
 
-// getParameterType returns a human-readable type description
-func getParameterType(schema *ParameterSchema) string {
-	if schema == nil {
-		return "string"
-	}
-	
-	switch schema.Type {
-	case "array":
-		if schema.Items != nil {
-			return fmt.Sprintf("array of %s", getParameterType(schema.Items))
-		}
-		return "array"
-	case "object":
-		return "object"
-	case "integer":
-		return "integer"
-	case "number":
-		return "number"
-	case "boolean":
-		return "boolean"
-	case "null":
-		return "null"
-	default:
-		return "string"
-	}
+	return nil
 }

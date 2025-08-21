@@ -43,6 +43,7 @@ func createHTTPClient(proxyURL, authToken string) (*http.Client, error) {
 func createTransport(
 	transportType, serverURL, proxyURL, authToken, clientName string,
 ) (mcp.Transport, error) {
+	_ = clientName
 	httpClient, err := createHTTPClient(proxyURL, authToken)
 	if err != nil {
 		return nil, err
@@ -72,7 +73,6 @@ type authTransport struct {
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Clone the request to avoid modifying the original
 	reqClone := req.Clone(req.Context())
 	reqClone.Header.Set("Authorization", "Bearer "+t.token)
 	return t.base.RoundTrip(reqClone)
@@ -96,58 +96,25 @@ func createSession(
 	return session, nil
 }
 
-func getTools(ctx context.Context, session *mcp.ClientSession) ([]*mcp.Tool, error) {
-	toolsRes, err := session.ListTools(ctx, &mcp.ListToolsParams{})
-	if err != nil {
-		return nil, err
-	}
-
-	return toolsRes.Tools, nil
-}
-
-func getToolParameters(
-	ctx context.Context,
-	session *mcp.ClientSession,
-	toolName string,
-) ([]ParameterInfo, error) {
-	tools, err := getTools(ctx, session)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, tool := range tools {
-		if tool.Name == toolName {
-			return extractParametersFromSchema(tool.InputSchema), nil
-		}
-	}
-
-	return nil, fmt.Errorf("tool %q not found", toolName)
-}
-
 // getToolSchema fetches the schema for a specific tool with timeout
 func getToolSchema(ctx context.Context, session *mcp.ClientSession, toolName string) (*ToolSchema, error) {
-	// Create a context with timeout for schema fetching
 	schemaCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	// Get all tools to find the specific tool
 	toolsRes, err := session.ListTools(schemaCtx, &mcp.ListToolsParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tools: %w", err)
 	}
 
-	// Find the specific tool
 	for _, tool := range toolsRes.Tools {
 		if tool.Name == toolName {
 			if tool.InputSchema == nil {
-				// Tool has no schema, return empty schema
 				return &ToolSchema{
 					Parameters: make(map[string]*ParameterSchema),
 					Required:   []string{},
 				}, nil
 			}
 
-			// Extract schema from the tool
 			schema, err := extractFullSchema(tool.InputSchema)
 			if err != nil {
 				return nil, fmt.Errorf("failed to extract schema for tool %q: %w", toolName, err)

@@ -132,14 +132,3 @@ func TestExecCommandConfiguration(t *testing.T) {
 		t.Error("param flag not found")
 	}
 }
-
-func TestParameterInfo(t *testing.T) {
-	param := ParameterInfo{Name: "test", Type: "string"}
-
-	if param.Name != "test" {
-		t.Errorf("expected Name 'test', got %q", param.Name)
-	}
-	if param.Type != "string" {
-		t.Errorf("expected Type 'string', got %q", param.Type)
-	}
-}

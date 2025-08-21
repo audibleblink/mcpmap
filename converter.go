@@ -39,18 +39,6 @@ var (
 	booleanFalseValues = []string{"false", "no", "0", "off"}
 )
 
-func getConverters() map[string]func(string, *ParameterSchema) (any, error) {
-	return map[string]func(string, *ParameterSchema) (any, error){
-		"string":  convertString,
-		"integer": convertInteger,
-		"number":  convertNumber,
-		"boolean": convertBoolean,
-		"array":   convertArray,
-		"object":  convertObject,
-		"null":    convertNull,
-	}
-}
-
 func newTypeError(
 	schema *ParameterSchema,
 	expectedType, actualValue, hint string,
@@ -68,28 +56,35 @@ func convertValue(value string, schema *ParameterSchema) (any, error) {
 	if schema == nil {
 		return value, nil
 	}
-
-	// Handle empty string with default value
 	if value == "" && schema.Default != nil {
 		return schema.Default, nil
 	}
 
-	if conv, ok := getConverters()[schema.Type]; ok {
-		return conv(value, schema)
+	switch schema.Type {
+	case "string":
+		return convertString(value, schema)
+	case "integer":
+		return convertInteger(value, schema)
+	case "number":
+		return convertNumber(value, schema)
+	case "boolean":
+		return convertBoolean(value, schema)
+	case "array":
+		return convertArray(value, schema)
+	case "object":
+		return convertObject(value, schema)
+	case "null":
+		return convertNull(value, schema)
+	default:
+		return value, nil
 	}
-
-	// Unknown type, treat as string
-	return value, nil
 }
 
 // convertString handles string type conversion with format validation
 func convertString(value string, schema *ParameterSchema) (any, error) {
-	// Remove surrounding quotes if present
 	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
 		value = value[1 : len(value)-1]
 	}
-
-	// Validate enum if specified
 	if len(schema.Enum) > 0 {
 		if err := validateEnum(value, schema.Enum); err != nil {
 			return nil, newTypeError(
@@ -101,7 +96,6 @@ func convertString(value string, schema *ParameterSchema) (any, error) {
 		}
 	}
 
-	// Validate format if specified
 	if schema.Format != "" {
 		if err := validateFormat(value, schema.Format); err != nil {
 			return nil, newTypeError(
@@ -120,7 +114,6 @@ func convertString(value string, schema *ParameterSchema) (any, error) {
 func convertInteger(value string, schema *ParameterSchema) (any, error) {
 	value = strings.TrimSpace(value)
 
-	// Check if it contains decimal point
 	if strings.Contains(value, ".") {
 		return nil, newTypeError(schema, "integer", value, errorHints["integer"])
 	}
@@ -130,7 +123,6 @@ func convertInteger(value string, schema *ParameterSchema) (any, error) {
 		return nil, newTypeError(schema, "integer", value, errorHints["integer"])
 	}
 
-	// Validate enum if specified
 	if len(schema.Enum) > 0 {
 		if err := validateEnum(result, schema.Enum); err != nil {
 			return nil, newTypeError(
@@ -154,7 +146,6 @@ func convertNumber(value string, schema *ParameterSchema) (any, error) {
 		return nil, newTypeError(schema, "number", value, errorHints["number"])
 	}
 
-	// Validate enum if specified
 	if len(schema.Enum) > 0 {
 		if err := validateEnum(result, schema.Enum); err != nil {
 			return nil, newTypeError(
@@ -188,7 +179,6 @@ func convertBoolean(value string, schema *ParameterSchema) (any, error) {
 func convertArray(value string, schema *ParameterSchema) (any, error) {
 	value = strings.TrimSpace(value)
 
-	// Try JSON format first
 	if isJSONArray(value) {
 		var result []any
 		if err := json.Unmarshal([]byte(value), &result); err != nil {
@@ -200,11 +190,9 @@ func convertArray(value string, schema *ParameterSchema) (any, error) {
 			)
 		}
 
-		// Convert array items if schema is provided
 		if schema.Items != nil {
 			convertedResult := make([]any, len(result))
 			for i, item := range result {
-				// Convert item to string first, then apply schema conversion
 				itemStr := fmt.Sprintf("%v", item)
 				converted, err := convertValue(itemStr, schema.Items)
 				if err != nil {
@@ -218,7 +206,6 @@ func convertArray(value string, schema *ParameterSchema) (any, error) {
 		return result, nil
 	}
 
-	// Try comma-separated format
 	if value == "" {
 		return []any{}, nil
 	}
@@ -229,7 +216,6 @@ func convertArray(value string, schema *ParameterSchema) (any, error) {
 	for i, part := range parts {
 		part = strings.TrimSpace(part)
 
-		// Convert item if schema is provided
 		if schema.Items != nil {
 			converted, err := convertValue(part, schema.Items)
 			if err != nil {
@@ -253,12 +239,10 @@ func convertObject(value string, schema *ParameterSchema) (any, error) {
 		return nil, newTypeError(schema, "object", value, errorHints["object"])
 	}
 
-	// Convert object properties if schema is provided
 	if schema.Properties != nil {
 		convertedResult := make(map[string]any)
 		for key, val := range result {
 			if propSchema, exists := schema.Properties[key]; exists {
-				// Convert value to string first, then apply schema conversion
 				valStr := fmt.Sprintf("%v", val)
 				converted, err := convertValue(valStr, propSchema)
 				if err != nil {
@@ -338,7 +322,6 @@ func parseParamsWithSchema(params []string, schema *ToolSchema) (map[string]any,
 	result := make(map[string]any)
 	var warnings []string
 
-	// Parse all parameters
 	for _, param := range params {
 		parts := strings.SplitN(param, "=", 2)
 		if len(parts) != 2 {
@@ -352,16 +335,13 @@ func parseParamsWithSchema(params []string, schema *ToolSchema) (map[string]any,
 			return nil, fmt.Errorf("parameter name cannot be empty in '%s'", param)
 		}
 
-		// Get parameter schema
 		paramSchema, exists := schema.Parameters[name]
 		if !exists {
-			// Parameter not in schema - warn but continue
 			warnings = append(warnings, fmt.Sprintf("parameter %q not found in schema", name))
 			result[name] = value
 			continue
 		}
 
-		// Convert value using schema
 		converted, err := convertValue(value, paramSchema)
 		if err != nil {
 			return nil, err
@@ -370,17 +350,13 @@ func parseParamsWithSchema(params []string, schema *ToolSchema) (map[string]any,
 		result[name] = converted
 	}
 
-	// Print warnings to stderr
 	for _, warning := range warnings {
 		fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
 	}
 
-	// Validate required parameters
 	if err := validateRequired(result, schema); err != nil {
 		return nil, err
 	}
 
 	return result, nil
 }
-
-// ensure verbose flag propagates to schema extraction logic

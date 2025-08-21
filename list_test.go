@@ -1,37 +1,10 @@
 package main
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-func TestListArgumentValidation(t *testing.T) {
-	validTypes := []string{"tools", "resources", "prompts", "all", ""}
-
-	for _, listType := range validTypes {
-		t.Run("valid-"+listType, func(t *testing.T) {
-			// These should all be valid
-			switch listType {
-			case "tools", "resources", "prompts", "all", "":
-				// Valid - no error expected
-			default:
-				t.Errorf("unexpected invalid type in valid list: %s", listType)
-			}
-		})
-	}
-
-	// Test invalid type
-	t.Run("invalid-type", func(t *testing.T) {
-		// In actual usage, this would be caught by cobra args validation
-		listType := "invalid"
-		validTypes := map[string]bool{"tools": true, "resources": true, "prompts": true, "all": true}
-		if !validTypes[listType] && listType != "" {
-			// This would error in real usage - expected behavior
-		}
-	})
-}
 
 func TestOutputItems(t *testing.T) {
 	h := newTestHelper(t)
@@ -108,28 +81,5 @@ func TestListCommandConfiguration(t *testing.T) {
 	// Check json flag exists
 	if listCmd.Flags().Lookup("json") == nil {
 		t.Error("json flag not found")
-	}
-}
-
-func TestJSONMarshaling(t *testing.T) {
-	items := []any{
-		&mcp.Tool{Name: "test-tool", Description: "A test tool"},
-		&mcp.Resource{URI: "file://test.txt", Name: "Test Resource"},
-		&mcp.Prompt{Name: "test-prompt", Description: "A test prompt"},
-	}
-
-	for _, item := range items {
-		t.Run("marshal-"+getItemName(item), func(t *testing.T) {
-			jsonBytes, err := json.Marshal(item)
-			if err != nil {
-				t.Errorf("failed to marshal item to JSON: %v", err)
-			}
-
-			// Verify it's valid JSON
-			var result map[string]any
-			if err := json.Unmarshal(jsonBytes, &result); err != nil {
-				t.Errorf("generated JSON is invalid: %v", err)
-			}
-		})
 	}
 }

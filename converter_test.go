@@ -6,7 +6,7 @@ import (
 
 func TestConvertBoolean(t *testing.T) {
 	schema := &ParameterSchema{Name: "test", Type: "boolean"}
-	
+
 	tests := []struct {
 		input    string
 		expected bool
@@ -25,7 +25,7 @@ func TestConvertBoolean(t *testing.T) {
 		{"invalid", false, true},
 		{"maybe", false, true},
 	}
-	
+
 	for _, test := range tests {
 		result, err := convertBoolean(test.input, schema)
 		if test.hasError {
@@ -44,7 +44,7 @@ func TestConvertBoolean(t *testing.T) {
 
 func TestConvertInteger(t *testing.T) {
 	schema := &ParameterSchema{Name: "test", Type: "integer"}
-	
+
 	tests := []struct {
 		input    string
 		expected int64
@@ -57,7 +57,7 @@ func TestConvertInteger(t *testing.T) {
 		{"abc", 0, true},
 		{"", 0, true},
 	}
-	
+
 	for _, test := range tests {
 		result, err := convertInteger(test.input, schema)
 		if test.hasError {
@@ -76,7 +76,7 @@ func TestConvertInteger(t *testing.T) {
 
 func TestConvertNumber(t *testing.T) {
 	schema := &ParameterSchema{Name: "test", Type: "number"}
-	
+
 	tests := []struct {
 		input    string
 		expected float64
@@ -88,7 +88,7 @@ func TestConvertNumber(t *testing.T) {
 		{"0", 0.0, false},
 		{"abc", 0, true},
 	}
-	
+
 	for _, test := range tests {
 		result, err := convertNumber(test.input, schema)
 		if test.hasError {
@@ -107,7 +107,7 @@ func TestConvertNumber(t *testing.T) {
 
 func TestConvertArray(t *testing.T) {
 	schema := &ParameterSchema{Name: "test", Type: "array"}
-	
+
 	tests := []struct {
 		input    string
 		expected []any
@@ -119,7 +119,7 @@ func TestConvertArray(t *testing.T) {
 		{`[1,2,3]`, []any{float64(1), float64(2), float64(3)}, false}, // JSON numbers are float64
 		{"single", []any{"single"}, false},
 	}
-	
+
 	for _, test := range tests {
 		result, err := convertArray(test.input, schema)
 		if test.hasError {
@@ -168,20 +168,20 @@ func TestExtractFullSchema(t *testing.T) {
 		},
 		"required": []any{"name"},
 	}
-	
+
 	schema, err := extractFullSchema(schemaData)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	if len(schema.Parameters) != 3 {
 		t.Errorf("Expected 3 parameters, got %d", len(schema.Parameters))
 	}
-	
+
 	if len(schema.Required) != 1 || schema.Required[0] != "name" {
 		t.Errorf("Expected required=['name'], got %v", schema.Required)
 	}
-	
+
 	nameParam := schema.Parameters["name"]
 	if nameParam == nil {
 		t.Fatal("name parameter not found")
@@ -192,7 +192,7 @@ func TestExtractFullSchema(t *testing.T) {
 	if !nameParam.Required {
 		t.Error("Expected name to be required")
 	}
-	
+
 	countParam := schema.Parameters["count"]
 	if countParam == nil {
 		t.Fatal("count parameter not found")

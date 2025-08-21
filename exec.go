@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"mcpmap/cache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
@@ -56,11 +55,9 @@ func runExec(cmd *cobra.Command, args []string) error {
 	toolName := args[0]
 
 	return withSession(ctx, func(session *mcp.ClientSession) error {
-		// Try to fetch schema (best-effort)
 		var toolParams map[string]any
 		schema, err := getToolSchema(ctx, session, toolName)
 		if err != nil {
-			// Schema fetch failed, warn and fall back to string parsing
 			fmt.Fprintf(os.Stderr, "Warning: Could not fetch schema for tool %q: %v\n", toolName, err)
 			fmt.Fprintf(os.Stderr, "Warning: Using string-only parameter parsing\n")
 
@@ -69,7 +66,6 @@ func runExec(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("parse parameters: %w", err)
 			}
 		} else {
-			// Schema available, use schema-based parsing
 			toolParams, err = parseParamsWithSchema(params, schema)
 			if err != nil {
 				return fmt.Errorf("parse parameters with schema: %w", err)
@@ -191,44 +187,21 @@ func toolNameCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	serverURL, transportType := extractServerConfig(cmd)
-	if serverURL == "" {
+	srvURL, transport := extractServerConfig(cmd)
+	if srvURL == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	// Try cache first
-	c := cache.New(serverURL, transportType, authToken, clientName)
-	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
-		completions := make([]string, 0, len(data.Tools))
-		for _, tool := range data.Tools {
-			completions = append(completions, tool.Name)
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	// Cache miss - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	defer session.Close()
-
-	tools, err := getTools(ctx, session)
-	if err != nil {
+	data, err := loadServerDataWithConfig(ctx, srvURL, transport, authToken, clientName)
+	if err != nil || len(data.Tools) == 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	// Update cache for next time
-	go func() {
-		cacheData := &cache.CacheData{Tools: tools}
-		c.Save(cacheData)
-	}()
-
-	completions := make([]string, 0, len(tools))
-	for _, tool := range tools {
+	completions := make([]string, 0, len(data.Tools))
+	for _, tool := range data.Tools {
 		completions = append(completions, tool.Name)
 	}
 
@@ -245,59 +218,35 @@ func paramCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	serverURL, transportType := extractServerConfig(cmd)
-	if serverURL == "" {
+	srvURL, transport := extractServerConfig(cmd)
+	if srvURL == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	toolName := args[0]
 
-	// Try cache first
-	c := cache.New(serverURL, transportType, authToken, clientName)
-	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
-		// Find the tool in cached data
-		for _, tool := range data.Tools {
-			if tool.Name == toolName {
-				params := extractParametersFromSchema(tool.InputSchema)
-				if len(params) > 0 {
-					completions := make([]string, 0, len(params))
-					for _, param := range params {
-						completions = append(completions, param.Name+"=")
-					}
-					return completions, cobra.ShellCompDirectiveNoFileComp
-				}
-				break
-			}
-		}
-	}
-
-	// Cache miss or tool not found - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	defer session.Close()
-
-	params, err := getToolParameters(ctx, session, toolName)
+	data, err := loadServerDataWithConfig(ctx, srvURL, transport, authToken, clientName)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	// Update cache for next time (get all tools to cache them)
-	go func() {
-		if tools, err := getTools(ctx, session); err == nil {
-			cacheData := &cache.CacheData{Tools: tools}
-			c.Save(cacheData)
+	// Find the tool in data
+	for _, tool := range data.Tools {
+		if tool.Name == toolName {
+			params := extractParametersFromSchema(tool.InputSchema)
+			if len(params) > 0 {
+				completions := make([]string, 0, len(params))
+				for _, param := range params {
+					completions = append(completions, param.Name+"=")
+				}
+				return completions, cobra.ShellCompDirectiveNoFileComp
+			}
+			break
 		}
-	}()
-
-	completions := make([]string, 0, len(params))
-	for _, param := range params {
-		completions = append(completions, param.Name+"=")
 	}
 
-	return completions, cobra.ShellCompDirectiveNoFileComp
+	return nil, cobra.ShellCompDirectiveNoFileComp
 }

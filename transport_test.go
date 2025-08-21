@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -607,37 +606,3 @@ func TestExtractParametersFromJSONSchema(t *testing.T) {
 // Note: getToolParameters requires a real *mcp.ClientSession, so we test
 // the parameter extraction logic separately and leave integration testing
 // for higher-level tests that can create real sessions.
-func TestProxyURLParsing(t *testing.T) {
-	tests := []struct {
-		name     string
-		proxyURL string
-		wantErr  bool
-	}{
-		{"valid http proxy", "http://proxy.example.com:8080", false},
-		{"valid https proxy", "https://proxy.example.com:8080", false},
-		{"proxy with auth", "http://user:pass@proxy.example.com:8080", false},
-		{"proxy without port", "http://proxy.example.com", false},
-		{"invalid scheme", "ftp://proxy.example.com:8080", false}, // url.Parse allows this
-		{"missing scheme", "proxy.example.com:8080", false},       // url.Parse allows this
-		{"empty string", "", false},                               // Empty proxy is valid (no proxy)
-		{"malformed URL", "://invalid", true},
-		{"space in URL", "http://proxy .example.com", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.proxyURL == "" {
-				// Empty proxy should not cause parsing
-				return
-			}
-
-			_, err := url.Parse(tt.proxyURL)
-			if tt.wantErr && err == nil {
-				t.Error("expected error but got none")
-			}
-			if !tt.wantErr && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}

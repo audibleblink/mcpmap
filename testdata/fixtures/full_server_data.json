@@ -1,0 +1,67 @@
+{
+	"tools": [
+		{
+			"description": "Resolves a package/product name to a Context7-compatible library ID and returns a list of matching libraries.",
+			"inputSchema": {
+				"type": "object",
+				"$schema": "http://json-schema.org/draft-07/schema#",
+				"required": ["libraryName"],
+				"properties": {
+					"libraryName": {
+						"type": "string",
+						"description": "Library name to search for and retrieve a Context7-compatible library ID."
+					}
+				},
+				"additionalProperties": { "not": {} }
+			},
+			"name": "resolve-library-id",
+			"title": "Resolve Context7 Library ID"
+		},
+		{
+			"description": "Fetches up-to-date documentation for a library.",
+			"inputSchema": {
+				"type": "object",
+				"$schema": "http://json-schema.org/draft-07/schema#",
+				"required": ["context7CompatibleLibraryID"],
+				"properties": {
+					"context7CompatibleLibraryID": {
+						"type": "string",
+						"description": "Exact Context7-compatible library ID"
+					},
+					"tokens": {
+						"type": "number",
+						"description": "Maximum number of tokens of documentation to retrieve (default: 10000)."
+					},
+					"topic": {
+						"type": "string",
+						"description": "Topic to focus documentation on (e.g., 'hooks', 'routing')."
+					}
+				},
+				"additionalProperties": { "not": {} }
+			},
+			"name": "get-library-docs",
+			"title": "Get Library Docs"
+		}
+	],
+	"resources": [
+		{
+			"uri": "context7://libraries",
+			"name": "Available Libraries",
+			"description": "List of all available libraries in the Context7 system"
+		}
+	],
+	"prompts": [
+		{
+			"name": "explain-library",
+			"description": "Explains how to use a specific library",
+			"arguments": [
+				{
+					"name": "library_id",
+					"description": "The Context7 library ID to explain",
+					"required": true
+				}
+			]
+		}
+	]
+}
+
