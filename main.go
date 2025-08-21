@@ -24,31 +24,50 @@ It supports both SSE (Server-Sent Events) and Streamable HTTP transport options.
 }
 
 func validateFlags(cmd *cobra.Command, args []string) error {
-	if cmd.Name() == "completion" || cmd.Name() == "__complete" ||
-		cmd.Name() == "__completeNoDesc" {
+	config, err := parseTransportFlags(cmd)
+	if err != nil {
+		return err
+	}
+	
+	// Skip setting globals for completion commands
+	if config == nil {
 		return nil
+	}
+
+	// Set global state only after successful parsing
+	transportType = config.transportType
+	serverURL = config.serverURL
+
+	return nil
+}
+
+type transportConfig struct {
+	transportType string
+	serverURL     string
+}
+
+func parseTransportFlags(cmd *cobra.Command) (*transportConfig, error) {
+	if cmd.Name() == "completion" || cmd.Name() == "__complete" ||
+		cmd.Name() == "__completeNoDesc" || cmd.Name() == "cache" ||
+		cmd.Name() == "clear" || cmd.Name() == "info" {
+		return nil, nil // Skip validation for completion commands
 	}
 
 	sseFlag := cmd.Flag("sse")
 	httpFlag := cmd.Flag("http")
 
 	if sseFlag.Changed && httpFlag.Changed {
-		return fmt.Errorf("cannot specify both --sse and --http flags")
+		return nil, fmt.Errorf("cannot specify both --sse and --http flags")
 	}
 
 	if sseFlag.Changed {
-		transportType = "sse"
-		serverURL = sseFlag.Value.String()
-	} else if httpFlag.Changed {
-		transportType = "http"
-		serverURL = httpFlag.Value.String()
+		return &transportConfig{"sse", sseFlag.Value.String()}, nil
+	}
+	if httpFlag.Changed {
+		return &transportConfig{"http", httpFlag.Value.String()}, nil
 	}
 
-	if serverURL == "" {
-		return fmt.Errorf("must specify either --sse=<url> or --http=<url>")
-	}
-
-	return nil
+	return nil, fmt.Errorf("must specify either --sse=<url> or --http=<url>")
 }
 
 // createCompletionCommand creates the completion command
@@ -96,3 +115,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+

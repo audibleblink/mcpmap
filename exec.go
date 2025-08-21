@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"mcpmap/cache"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
@@ -16,10 +17,29 @@ var params []string
 
 var execCmd = &cobra.Command{
 	Use:   "exec <tool>",
-	Short: "Execute a tool on the MCP server",
-	Long:  `Execute a tool on the MCP server with the specified parameters.`,
-	Args:  cobra.ExactArgs(1),
-	RunE:  runExec,
+	Short: "Execute a tool on the MCP server with automatic type conversion",
+	Long: `Execute a tool on the MCP server with automatic type conversion.
+
+Parameters are automatically converted to their expected types based on the tool's schema.
+If schema fetching fails, parameters are treated as strings (backward compatibility).
+
+Examples:
+  # Simple types
+  mcpmap exec search --param query="user login" --param limit=10
+  
+  # Boolean values (accepts: true/false, yes/no, 1/0, on/off)
+  mcpmap exec toggle --param enabled=true --param verbose=yes
+  
+  # Arrays (comma-separated or JSON)
+  mcpmap exec filter --param tags=red,blue --param ids=[1,2,3]
+  
+  # Complex objects (JSON required)
+  mcpmap exec query --param filter='{"age":{"min":18}}'
+  
+  # Numbers (integers and floats)
+  mcpmap exec calculate --param x=10 --param y=3.14`,
+	Args: cobra.ExactArgs(1),
+	RunE: runExec,
 }
 
 func init() {
@@ -35,34 +55,42 @@ func runExec(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	toolName := args[0]
 
-	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	defer session.Close()
+	return withSession(ctx, func(session *mcp.ClientSession) error {
+		// Try to fetch schema (best-effort)
+		var toolParams map[string]any
+		schema, err := getToolSchema(ctx, session, toolName)
+		if err != nil {
+			// Schema fetch failed, warn and fall back to string parsing
+			fmt.Fprintf(os.Stderr, "Warning: Could not fetch schema for tool %q: %v\n", toolName, err)
+			fmt.Fprintf(os.Stderr, "Warning: Using string-only parameter parsing\n")
 
-	toolParams, err := parseParams(params)
-	if err != nil {
-		return fmt.Errorf("parse parameters: %w", err)
-	}
+			toolParams, err = parseParams(params)
+			if err != nil {
+				return fmt.Errorf("parse parameters: %w", err)
+			}
+		} else {
+			// Schema available, use schema-based parsing
+			toolParams, err = parseParamsWithSchema(params, schema)
+			if err != nil {
+				return fmt.Errorf("parse parameters with schema: %w", err)
+			}
+		}
 
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name:      toolName,
-		Arguments: toolParams,
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{
+			Name:      toolName,
+			Arguments: toolParams,
+		})
+		if err != nil {
+			return err
+		}
+
+		js, err := json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("json marshal result: %w", err)
+		}
+		fmt.Fprintln(os.Stdout, string(js))
+		return nil
 	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	js, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("json marshal result: %w", err)
-	}
-	fmt.Fprintln(os.Stdout, string(js))
-
-	return nil
 }
 
 func parseParams(params []string) (map[string]any, error) {
@@ -143,6 +171,17 @@ func extractServerConfig(cmd *cobra.Command) (serverURL, transportType string) {
 	return "", ""
 }
 
+// withSession creates a session, invokes fn, and ensures the session is closed.
+// It returns any error produced during session creation or execution.
+func withSession(ctx context.Context, fn func(*mcp.ClientSession) error) error {
+	session, err := createSession(ctx, transportType, serverURL, proxyURL, authToken, clientName)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	return fn(session)
+}
+
 func toolNameCompletion(
 	cmd *cobra.Command,
 	args []string,
@@ -157,6 +196,17 @@ func toolNameCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	// Try cache first
+	c := cache.New(serverURL, transportType, authToken, clientName)
+	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
+		completions := make([]string, 0, len(data.Tools))
+		for _, tool := range data.Tools {
+			completions = append(completions, tool.Name)
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	// Cache miss - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -170,6 +220,12 @@ func toolNameCompletion(
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+
+	// Update cache for next time
+	go func() {
+		cacheData := &cache.CacheData{Tools: tools}
+		c.Save(cacheData)
+	}()
 
 	completions := make([]string, 0, len(tools))
 	for _, tool := range tools {
@@ -194,6 +250,28 @@ func paramCompletion(
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
+	toolName := args[0]
+
+	// Try cache first
+	c := cache.New(serverURL, transportType, authToken, clientName)
+	if data, _, _ := c.Load(); data != nil && len(data.Tools) > 0 {
+		// Find the tool in cached data
+		for _, tool := range data.Tools {
+			if tool.Name == toolName {
+				params := extractParametersFromSchema(tool.InputSchema)
+				if len(params) > 0 {
+					completions := make([]string, 0, len(params))
+					for _, param := range params {
+						completions = append(completions, param.Name+"=")
+					}
+					return completions, cobra.ShellCompDirectiveNoFileComp
+				}
+				break
+			}
+		}
+	}
+
+	// Cache miss or tool not found - query server
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -203,11 +281,18 @@ func paramCompletion(
 	}
 	defer session.Close()
 
-	toolName := args[0]
 	params, err := getToolParameters(ctx, session, toolName)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+
+	// Update cache for next time (get all tools to cache them)
+	go func() {
+		if tools, err := getTools(ctx, session); err == nil {
+			cacheData := &cache.CacheData{Tools: tools}
+			c.Save(cacheData)
+		}
+	}()
 
 	completions := make([]string, 0, len(params))
 	for _, param := range params {
